@@ -28,7 +28,6 @@ using nonstd::optional;
 using ouster_ros::GetConfig;
 using ouster_ros::PacketMsg;
 using ouster_ros::SetConfig;
-//test
 
 namespace nodelets_os {
 
@@ -417,25 +416,21 @@ class OusterSensor : public OusterClientBase {
     void start_connection_loop(ros::NodeHandle& nh) {
         allocate_buffers();
         create_publishers(nh);
-        if(ros::ok()){
-            timer_ = nh.createTimer(
-                ros::Duration(0),
-                [this](const ros::TimerEvent&) {
-                    auto& pf = sensor::get_format(info);
-                    connection_loop(*sensor_client, pf);
-                    timer_.stop();
-                    timer_.start();
-                },
-                true);
-        }
-        else{
-            set_config_param(operating_mode, sensor::OPERATING_STANDBY);
-        }
+        timer_ = nh.createTimer(
+            ros::Duration(0),
+            [this](const ros::TimerEvent&) {
+                auto& pf = sensor::get_format(info);
+                connection_loop(*sensor_client, pf);
+                timer_.stop();
+                timer_.start();
+            },
+            true);
     }
 
     void connection_loop(sensor::client& cli, const sensor::packet_format& pf) {
         auto state = sensor::poll_client(cli);
         if (state == sensor::EXIT) {
+            if(not ros::ok()) set_config_param(operating_mode, sensor::OPERATING_STANDBY);
             NODELET_INFO("poll_client: caught signal, exiting");
             return;
         }
