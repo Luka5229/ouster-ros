@@ -22,6 +22,7 @@
 #include "ouster_ros/PacketMsg.h"
 #include "ouster_ros/SetConfig.h"
 #include "ouster_ros/os_client_base_nodelet.h"
+#include "ouster/sensor_http.h"
 
 namespace sensor = ouster::sensor;
 using nonstd::optional;
@@ -50,6 +51,7 @@ class OusterSensor : public OusterClientBase {
         create_get_config_service(nh);
         create_set_config_service(nh);
         start_connection_loop(nh);
+        go_to_standby(sensor_hostname, config, flags);
     }
 
     std::string get_sensor_hostname(ros::NodeHandle& nh) {
@@ -430,7 +432,6 @@ class OusterSensor : public OusterClientBase {
     void connection_loop(sensor::client& cli, const sensor::packet_format& pf) {
         auto state = sensor::poll_client(cli);
         if (state == sensor::EXIT) {
-            if(not ros::ok()) set_config_param(operating_mode, sensor::OPERATING_STANDBY);
             NODELET_INFO("poll_client: caught signal, exiting");
             return;
         }
@@ -446,6 +447,34 @@ class OusterSensor : public OusterClientBase {
             if (sensor::read_imu_packet(cli, imu_packet.buf.data(), pf))
                 imu_packet_pub.publish(imu_packet);
         }
+    }
+
+    void go_to_standby(const std::string& hostname,
+                          sensor::sensor_config& config, int config_flags) {
+        if (config.udp_dest && sensor::in_multicast(config.udp_dest.value()) &&
+            !mtp_main) {
+            if (!get_config(hostname, config, true)) {
+                NODELET_ERROR("Error getting active config");
+            } else {
+                config.operating_mode = sensor::OPERATING_STANDBY;
+                NODELET_INFO("Retrived active config of sensor");
+            }
+            return;
+        }
+
+        try {
+            if (!set_config(hostname, config, config_flags)) {
+                auto err_msg = "Error connecting to sensor " + hostname;
+                NODELET_ERROR_STREAM(err_msg);
+                throw std::runtime_error(err_msg);
+            }
+        } catch (const std::exception& e) {
+            NODELET_ERROR("Error setting config:  %s", e.what());
+            throw;
+        }
+
+        NODELET_INFO_STREAM("Sensor " << hostname
+                                      << " was configured successfully, going into standby mode");
     }
 
    private:
